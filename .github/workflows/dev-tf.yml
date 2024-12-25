@@ -1,0 +1,77 @@
+name: Terraform CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - feature/*
+
+jobs:
+  terraform-pipeline:
+    name: Terraform CI/CD Pipeline
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+
+    steps:
+      # Step 1: Checkout Code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Set Up Terraform
+      - name: Set Up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.5
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      # Step 3: Install tfsec
+      - name: Install tfsec
+        run: |
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/main/install.sh | bash
+
+      # Step 4: Install tflint
+      - name: Install tflint
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install.sh | bash
+
+      # Step 5: Run tfsec
+      - name: Run tfsec (Security Checks)
+        run: tfsec .
+        continue-on-error: false
+
+      # Step 6: Run tflint
+      - name: Run tflint (Linting)
+        run: tflint
+        continue-on-error: false
+
+      # Step 7: Terraform Init
+      - name: Terraform Init
+        run: terraform init
+
+      # Step 8: Terraform Validate
+      - name: Terraform Validate
+        run: terraform validate
+
+      # Step 9: Terraform Plan
+      - name: Terraform Plan
+        run: terraform plan -out=tfplan
+        env:
+          TF_VAR_branch: ${{ github.ref_name }}
+
+      # Step 10: Manual Approval (Main Branch Only)
+      - name: Manual Approval
+        if: github.ref_name == 'main'
+        uses: hmarr/auto-approve-action@v2
+        with:
+          timeout: 15m
+          allow: true
+
+      # Step 11: Terraform Apply (Main Branch Only)
+      - name: Terraform Apply
+        if: github.ref_name == 'main'
+        run: terraform apply -auto-approve tfplan
